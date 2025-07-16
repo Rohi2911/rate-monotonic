@@ -488,6 +488,19 @@ struct sched_entity {
 #endif
 };
 
+struct sched_rm_entity {
+	struct list_head 		run_list;
+	unsigned int 			prio;
+	u64 					rm_runtime;
+	u64 					rm_deadline;
+	u64 					rm_period;
+	u64 					runtime;			
+
+	struct rm_rq 			*rm_rq;
+	unsigned short			on_rq;
+	unsigned short			on_list;
+};
+
 struct sched_rt_entity {
 	struct list_head		run_list;
 	unsigned long			timeout;

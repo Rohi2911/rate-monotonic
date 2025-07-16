@@ -237,6 +237,11 @@ dl_entity_preempt(struct sched_dl_entity *a, struct sched_dl_entity *b)
 	       dl_time_before(a->deadline, b->deadline);
 }
 
+struct rm_prio_array {
+	DECLARE_BITMAP(bitmap, MAX_RM_PRIO+1);
+	struct list_head queue[MAX_RM_PRIO];
+};
+
 /*
  * This is the priority-queue data structure of the RT scheduling class:
  */
@@ -610,13 +615,15 @@ static inline int rt_bandwidth_enabled(void)
 
 /* Rate Monotonic Scheduling class related field in a runqueue: */
 struct rm_rq {
-	unsigned int rm_nr_running;
-	int curr;
-	int rm_queued;
+	struct rm_prio_array	 active;
+	unsigned int 			rm_nr_running;
+	int 		curr;
+	int 		rm_queued;
 	u64			rm_time;
 	u64			rm_runtime;
-	struct rq		*rq;
-	struct task_group	*tg;
+	struct rq				*rq;
+	struct task_group		*tg;
+	struct rb_root_cached 	task_rate;
 };
 
 /* Real-Time classes' related field in a runqueue: */
@@ -626,7 +633,7 @@ struct rt_rq {
 	unsigned int		rr_nr_running;
 #if defined CONFIG_SMP || defined CONFIG_RT_GROUP_SCHED
 	struct {
-		int		curr; /* highest qucfs_rqeued rt task prio */
+		int		curr; /* highest queued rt task prio */
 #ifdef CONFIG_SMP
 		int		next; /* next highest */
 #endif
@@ -944,6 +951,7 @@ struct rq {
 	struct cfs_rq		cfs;
 	struct rt_rq		rt;
 	struct dl_rq		dl;
+	struct rm_rq		rm;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	/* list of leaf cfs_rq on this CPU: */
