@@ -33,6 +33,10 @@ dequeue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
 static void 
 check_preempt_curr_rm(struct rq *rq, struct task_struct *p, int flags) {
 
+    if(p->prio < rq->curr->prio) {
+        resched_curr(rq);
+        return;
+    }
 }
 
 static void yield_task_rm(struct rq *rq) {
