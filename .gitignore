@@ -35,13 +35,17 @@
 *.mod.c
 *.o
 *.o.*
+*.obj
+*.out
 *.patch
 *.s
 *.so
 *.so.dbg
 *.su
 *.symtypes
+*.swp
 *.tab.[ch]
+*.tmp
 *.tar
 *.xz
 *.zst
@@ -64,6 +68,9 @@ modules.order
 /Module.markers
 /modules.builtin.modinfo
 /modules.nsdeps
+/initramfs.*
+/Module.symvers
+/modules.order
 
 #
 # RPM spec file (make rpm-pkg)
@@ -155,3 +162,41 @@ x509.genkey
 
 # Documentation toolchain
 sphinx_*/
+
+# Ignore build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.symvers
+*.order
+*.cmd
+*.dwo
+*.d
+
+# Ctags & IDE files
+tags
+*.tag
+*.ctags
+*.idea/
+.vscode/
+*.DS_Store
+
+# Git and patch backups
+*.orig
+*.patch
+*.rej
+*.bak
+
+# Ignore temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+log/
+
+# Personal scripts (optional)
+/scripts/private/
