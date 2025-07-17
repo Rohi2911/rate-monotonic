@@ -3,8 +3,8 @@
 static void
 enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     
-    struct rms_rq *rm_rq = &rq->rm;
-    struct sched_rms_entity *rm_se = &p->rm;
+    struct rm_rq *rm_rq = &rq->rm;
+    struct sched_rm_entity *rm_se = &p->rm;
 
     list_add_tail(&rm_se->run_list, &rm_rq->active.queue[rm_se->prio]);
 	__set_bit(rm_se->prio, rm_rq->active.bitmap);
@@ -17,6 +17,16 @@ enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
 static void
 dequeue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
 
+    struct rm_rq *rm_rq = &rq->rm;
+    struct sched_rm_entity *rm_se = &p->rm;
+
+    list_del_init(&rm_se->run_list);
+
+    if(list_empty(&(rm_rq->active.queue[rm_se->prio]))) {
+        __clear_bit(rm_se->prio, &rm_rq->active);
+    }
+
+    rm_rq->rm_nr_running--;
 
 }
 
