@@ -1,7 +1,10 @@
 #include "sched.h"
 
-static inline struct 
-task_struct *rm_task_of(struct sched_rm_entity *rm_se) {
+#define for_each_sched_rm_entity(rm_se) \
+	for (; rm_se; rm_se = NULL)
+
+static inline 
+struct task_struct *rm_task_of(struct sched_rm_entity *rm_se) {
 
     return container_of(rm_se, struct task_struct, rm);
 }
@@ -45,13 +48,44 @@ check_preempt_curr_rm(struct rq *rq, struct task_struct *p, int flags) {
     }
 }
 
+static void 
+requeue_rm_entity(struct rm_rq *rm_rq, struct sched_rm_entity *rm_se, int head) {
+
+    if(rm_se->on_rq) {
+        struct rm_prio_array *array = &rm_rq->active;
+        struct list_head *queue = array->queue + rm_task_of(rm_se)->prio;
+
+        if(head) {
+            list_move(&rm_se->run_list, queue);
+        }
+        else {
+            list_move_tail(&rm_se->run_list, queue);
+        }
+    }
+}
+
+static void 
+requeue_task_rm(struct rq *rq, struct task_struct *p, int head) {
+
+    struct sched_rm_entity *rm_se = &p->rm;
+    struct rm_rq *rm_rq;
+
+    for_each_sched_rm_entity(rm_se) {
+        rm_rq = rm_se->rm_rq;
+        requeue_rm_entity(rm_rq, rm_se, head);
+    }
+}
+
 static void yield_task_rm(struct rq *rq) {
     
+    requeue_task_rm(rq, rq->curr, 0);
 }
 
 
 static inline void 
 set_next_task_rm(struct rq *rq, struct task_struct *p, bool first) {
+
+    p->se.exec_start = rq_clock_task(rq);
 
 }
 
@@ -63,6 +97,8 @@ static struct task_struct *pick_next_task_rm(struct rq *rq) {
     struct list_head *queue;
     int idx;
 
+    struct task_struct *p;
+
     idx = sched_find_first_bit(array->bitmap);
     
     if(idx >= MAX_RM_PRIO) {
@@ -71,7 +107,10 @@ static struct task_struct *pick_next_task_rm(struct rq *rq) {
 
     queue = array->queue + idx;
     next = list_entry(queue->next, struct sched_rm_entity, run_list);
-    return rm_task_of(next);
+    p = rm_task_of(next);
+
+    set_next_task_rm(rm_rq, p, true);
+    return p;
 
 }
 
