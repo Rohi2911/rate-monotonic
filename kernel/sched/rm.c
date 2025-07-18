@@ -1,5 +1,11 @@
 #include "sched.h"
 
+static inline struct 
+task_struct *rm_task_of(struct sched_rm_entity *rm_se) {
+
+    return container_of(rm_se, struct task_struct, rm);
+}
+
 static void
 enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     
@@ -50,6 +56,22 @@ set_next_task_rm(struct rq *rq, struct task_struct *p, bool first) {
 }
 
 static struct task_struct *pick_next_task_rm(struct rq *rq) {
+
+    struct rm_rq *rm_rq = &rq->rm;
+    struct sched_rm_entity *next = NULL;
+    struct rm_prio_array *array = &rm_rq->active;
+    struct list_head *queue;
+    int idx;
+
+    idx = sched_find_first_bit(array->bitmap);
+    
+    if(idx >= MAX_RM_PRIO) {
+        return NULL;
+    }
+
+    queue = array->queue + idx;
+    next = list_entry(queue->next, struct sched_rm_entity, run_list);
+    return rm_task_of(next);
 
 }
 
