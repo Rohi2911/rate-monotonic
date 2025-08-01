@@ -9,6 +9,35 @@ struct task_struct *rm_task_of(struct sched_rm_entity *rm_se) {
     return container_of(rm_se, struct task_struct, rm);
 }
 
+static void update_curr_rm(struct rq *rq) {
+
+    struct task_struct *curr = rq->curr;
+    struct sched_rm_entity *rm_se = &curr->rm;
+
+    u64 delta_exec;
+    u64 now;
+
+    if(curr->sched_class != &rm_sched_class) 
+        return;
+
+    now = rq_clock_task(rq);
+    delta_exec = now - curr->se.exec_start;
+    if(unlikely((s64)delta_exec <= 0))
+        return;
+
+    schedstat_set(curr->se.statistics.exec_max,               
+            max(curr->se.statistics.exec_max, delta_exec));
+
+    curr->se.sum_exec_runtime += delta_exec;
+    account_group_exec_runtime(curr, delta_exec);
+
+    curr->se.exec_start = now;
+    cgroup_account_cputime(curr, delta_exec);
+
+    /* No Bandwidth Control facility provided for RM Scheduler for now.*/
+
+}
+
 static void
 enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     
@@ -18,6 +47,7 @@ enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     list_add_tail(&rm_se->run_list, &rm_rq->active.queue[rm_se->prio]);
 	__set_bit(rm_se->prio, rm_rq->active.bitmap);
 
+    rm_se->on_rq = 1;
     rm_rq->nr_running++;
 
 
@@ -32,9 +62,10 @@ dequeue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     list_del_init(&rm_se->run_list);
 
     if(list_empty(&(rm_rq->active.queue[rm_se->prio]))) {
-        __clear_bit(rm_se->prio, &rm_rq->active);
+        __clear_bit(rm_se->prio, rm_rq->active.bitmap);
     }
 
+    rm_se->on_rq = 0;
     rm_rq->rm_nr_running--;
 
 }
@@ -50,7 +81,7 @@ check_preempt_curr_rm(struct rq *rq, struct task_struct *p, int flags) {
 
 static void 
 requeue_rm_entity(struct rm_rq *rm_rq, struct sched_rm_entity *rm_se, int head) {
-
+ 
     if(rm_se->on_rq) {
         struct rm_prio_array *array = &rm_rq->active;
         struct list_head *queue = array->queue + rm_task_of(rm_se)->prio;
@@ -77,7 +108,7 @@ requeue_task_rm(struct rq *rq, struct task_struct *p, int head) {
 }
 
 static void yield_task_rm(struct rq *rq) {
-    
+
     requeue_task_rm(rq, rq->curr, 0);
 }
 
@@ -116,6 +147,18 @@ static struct task_struct *pick_next_task_rm(struct rq *rq) {
 
 static void put_prev_task_rm(struct rq *rq, struct task_struct *p) {
 
+    update_curr_rm(rq);
+
+    u64 now = rq_clock_task(rq);
+    u64 delta_exec = now - p->se.exec_start;
+    
+    if(delta_exec > 0) {
+        p->rm.runtime -= delta_exec;
+    }
+
+    if(p->rm.runtime <= 0) {
+        dequeue_task_rm(rq, p, 0);
+    }
 }
 
 #ifdef CONFIG_SMP
@@ -127,13 +170,36 @@ select_task_rq_rm(struct task_struct *p, int cpu, int flags) {
 
 #endif /* CONFIG_SMP */
 
-static void update_curr_rm(struct rq *rq) {
+static enum hrtimer_restart job_arrival_handler(struct hrtimer *timer) {
+    struct sched_rm_entity *rm_se = container_of(timer, struct sched_rm_entity, periodic_timer);
+    struct task_struct *p = rm_task_of(rm_se);
+    struct rq *rq = task_rq_lock(p);
 
+    rm_se->runtime = rm_se->rm_runtime;
+    enqueue_task_rm(rq, p, 0);
+
+    task_rq_unlock(rq);
+
+    hrtimer_forward_now(timer, ns_to_ktime(rm_se->rm_period));
+    return HRTIMER_RESTART;
 }
 
-static void task_tick_rm(struct rq *rq, struct task_struct *p, int queued) {
+// static void task_tick_rm(struct rq *rq, struct task_struct *p, int queued) {
 
-}
+//     struct sched_rm_entity *rm_se = &p->rm;
+
+//     update_curr_rm(rq);
+
+//     if(rm_se->runtime > 0) {
+//         rm_se->runtime -= TICK_NSEC;
+//     }
+
+//     /* Schedule another task when current task completes*/
+//     if(rm_se->runtime <= 0) {
+//         rm_se->runtime = 0;
+//         resched_curr(rq);
+//     }
+// }
 
 
 DEFINE_SCHED_CLASS(rm) = {
@@ -151,6 +217,6 @@ DEFINE_SCHED_CLASS(rm) = {
 
 #endif /* CONFIG_SMP */
 
-    .task_tick              = task_tick_rm,
+    // .task_tick              = task_tick_rm,
     .update_curr            = update_curr_rm,
 };

@@ -491,14 +491,16 @@ struct sched_entity {
 struct sched_rm_entity {
 	struct list_head 		run_list;
 	unsigned int 			prio;
-	u64 					rm_runtime;
-	u64 					rm_deadline;
+	u64 					rm_runtime;		/* WCET*/
+	u64 					rm_deadline;	/* Relative deadline*/
 	u64 					rm_period;
-	u64 					runtime;			
+	u64						rm_bw;			/* rm_runtime / rm_period*/
+	u64 					runtime;		/* Remaining runtime*/	
 
 	struct rm_rq 			*rm_rq;
 	unsigned short			on_rq;
 	unsigned short			on_list;
+	struct hrtimer			periodic_timer;
 };
 
 struct sched_rt_entity {
