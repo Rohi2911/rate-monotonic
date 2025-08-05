@@ -501,6 +501,7 @@ struct sched_rm_entity {
 	unsigned short			on_rq;
 	unsigned short			on_list;
 	struct hrtimer			periodic_timer;
+	bool					timer_initialized;
 };
 
 struct sched_rt_entity {

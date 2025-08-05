@@ -3,6 +3,9 @@
 #define for_each_sched_rm_entity(rm_se) \
 	for (; rm_se; rm_se = NULL)
 
+static enum hrtimer_restart job_arrival_handler(struct hrtimer *timer);
+static void enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags);
+
 static inline 
 struct task_struct *rm_task_of(struct sched_rm_entity *rm_se) {
 
@@ -38,17 +41,42 @@ static void update_curr_rm(struct rq *rq) {
 
 }
 
+static enum hrtimer_restart job_arrival_handler(struct hrtimer *timer) {
+    struct sched_rm_entity *rm_se = container_of(timer, struct sched_rm_entity, periodic_timer);
+    struct task_struct *p = rm_task_of(rm_se);
+    struct rq_flags rf;
+    struct rq *rq;
+    
+    rq = task_rq_lock(p, &rf);
+
+    rm_se->runtime = rm_se->rm_runtime;
+    enqueue_task_rm(rq, p, 0);
+
+    task_rq_unlock(rq, p, &rf);
+
+    hrtimer_forward_now(timer, ns_to_ktime(rm_se->rm_period));
+    return HRTIMER_RESTART;
+}
+
 static void
 enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     
     struct rm_rq *rm_rq = &rq->rm;
     struct sched_rm_entity *rm_se = &p->rm;
 
+    if(!rm_se->timer_initialized) {
+        hrtimer_init(&rm_se->periodic_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+        rm_se->periodic_timer.function = job_arrival_handler;
+
+        hrtimer_start(&rm_se->periodic_timer, ns_to_ktime(rm_se->rm_period), HRTIMER_MODE_REL);
+        rm_se->timer_initialized = true;
+    }
+
     list_add_tail(&rm_se->run_list, &rm_rq->active.queue[rm_se->prio]);
 	__set_bit(rm_se->prio, rm_rq->active.bitmap);
 
     rm_se->on_rq = 1;
-    rm_rq->nr_running++;
+    rm_rq->rm_nr_running++;
 
 
 }
@@ -68,12 +96,17 @@ dequeue_task_rm(struct rq *rq, struct task_struct *p, int flags) {
     rm_se->on_rq = 0;
     rm_rq->rm_nr_running--;
 
+    if(hrtimer_active(&rm_se->periodic_timer)) {
+        hrtimer_cancel(&rm_se->periodic_timer);
+        rm_se->timer_initialized = false;
+    }
+
 }
 
 static void 
 check_preempt_curr_rm(struct rq *rq, struct task_struct *p, int flags) {
 
-    if(p->prio < rq->curr->prio) {
+    if(p->prio < rq->curr->prio && p->rm.rm_runtime > 0) {
         resched_curr(rq);
         return;
     }
@@ -138,27 +171,33 @@ static struct task_struct *pick_next_task_rm(struct rq *rq) {
 
     queue = array->queue + idx;
     next = list_entry(queue->next, struct sched_rm_entity, run_list);
-    p = rm_task_of(next);
 
-    set_next_task_rm(rm_rq, p, true);
-    return p;
+    if(next->runtime > 0) {
+        p = rm_task_of(next);
+        set_next_task_rm(rq, p, true);
+        return p;
+    }
+    return NULL;
 
 }
 
 static void put_prev_task_rm(struct rq *rq, struct task_struct *p) {
 
-    update_curr_rm(rq);
+    u64 now;
+    u64 delta_exec;
 
-    u64 now = rq_clock_task(rq);
-    u64 delta_exec = now - p->se.exec_start;
+    update_curr_rm(rq);
+    
+    now = rq_clock_task(rq);
+    delta_exec = now - p->se.exec_start;
     
     if(delta_exec > 0) {
         p->rm.runtime -= delta_exec;
     }
 
-    if(p->rm.runtime <= 0) {
-        dequeue_task_rm(rq, p, 0);
-    }
+    // if(p->rm.runtime <= 0) {
+    //     dequeue_task_rm(rq, p, 0);
+    // }
 }
 
 #ifdef CONFIG_SMP
@@ -166,23 +205,11 @@ static void put_prev_task_rm(struct rq *rq, struct task_struct *p) {
 static int
 select_task_rq_rm(struct task_struct *p, int cpu, int flags) {
 
+    return 0;
 }
 
 #endif /* CONFIG_SMP */
 
-static enum hrtimer_restart job_arrival_handler(struct hrtimer *timer) {
-    struct sched_rm_entity *rm_se = container_of(timer, struct sched_rm_entity, periodic_timer);
-    struct task_struct *p = rm_task_of(rm_se);
-    struct rq *rq = task_rq_lock(p);
-
-    rm_se->runtime = rm_se->rm_runtime;
-    enqueue_task_rm(rq, p, 0);
-
-    task_rq_unlock(rq);
-
-    hrtimer_forward_now(timer, ns_to_ktime(rm_se->rm_period));
-    return HRTIMER_RESTART;
-}
 
 // static void task_tick_rm(struct rq *rq, struct task_struct *p, int queued) {
 
