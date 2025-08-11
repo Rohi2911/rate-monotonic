@@ -99,6 +99,9 @@ extern void calc_global_load_tick(struct rq *this_rq);
 extern long calc_load_fold_active(struct rq *this_rq, long adjust);
 
 extern void call_trace_sched_update_nr_running(struct rq *rq, int count);
+
+extern int compute_rm_priority(u64 period);
+
 /*
  * Helpers for converting nanosecond timing to jiffy resolution
  */
@@ -615,7 +618,8 @@ static inline int rt_bandwidth_enabled(void)
 
 /* Rate Monotonic Scheduling class related field in a runqueue: */
 struct rm_rq {
-	struct rm_prio_array	 active;
+	struct rm_prio_array	active;
+	struct list_head		tasks;			/* All tasks registered with rm scheduling*/
 	unsigned int 			rm_nr_running;
 	int 		curr;
 	int 		rm_queued;
@@ -623,7 +627,8 @@ struct rm_rq {
 	u64			rm_runtime;
 	struct rq				*rq;
 	struct task_group		*tg;
-	struct rb_root_cached 	task_rate;
+	//  rb_root_cached 	task_rate;
+	raw_spinlock_t			rm_runtime_lock;
 };
 
 /* Real-Time classes' related field in a runqueue: */
@@ -696,7 +701,17 @@ struct dl_rq {
 	 */
 	struct rb_root_cached	pushable_dl_tasks_root;
 #else
-	struct dl_bw		dl_bw;
+	struct dl_bw		dl_bw;void __init init_sched_rm_class(void)
+{
+
+    unsigned int i;
+
+    for_each_possible_cpu(i) {
+        zalloc_cpumask_var_node(&per_cpu(local_cpu_mask, i),
+                                GFP_KERNEL, cpu_to_node(i));
+    }
+}
+
 #endif
 	/*
 	 * "Active utilization" for this runqueue: increased when a
@@ -2027,6 +2042,7 @@ extern void update_max_interval(void);
 
 extern void init_sched_dl_class(void);
 extern void init_sched_rt_class(void);
+extern void init_sched_rm_class(void);
 extern void init_sched_fair_class(void);
 
 extern void reweight_task(struct task_struct *p, int prio);
@@ -2374,6 +2390,7 @@ print_numa_stats(struct seq_file *m, int node, unsigned long tsf,
 #endif /* CONFIG_SCHED_DEBUG */
 
 extern void init_cfs_rq(struct cfs_rq *cfs_rq);
+extern void init_rm_rq(struct rm_rq *rm_rq);
 extern void init_rt_rq(struct rt_rq *rt_rq);
 extern void init_dl_rq(struct dl_rq *dl_rq);
 

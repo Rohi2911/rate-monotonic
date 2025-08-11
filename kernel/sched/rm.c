@@ -3,6 +3,49 @@
 #define for_each_sched_rm_entity(rm_se) \
 	for (; rm_se; rm_se = NULL)
 
+
+#define BASE_PERIOD 1
+
+static DEFINE_PER_CPU(cpumask_var_t, local_cpu_mask);
+
+
+int compute_rm_priority(u64 period)
+{
+    int prio;
+
+    prio = period / BASE_PERIOD;
+    return clamp(prio, 0, MAX_RM_PRIO - 1);
+}
+
+void init_rm_rq(struct rm_rq *rm_rq) {
+    struct rm_prio_array *array;
+    int i;
+
+    array = &rm_rq->active;
+    for(i = 0; i < MAX_RM_PRIO; i++) {
+        INIT_LIST_HEAD(array->queue + i);
+        __clear_bit(i, array->bitmap);
+    }
+
+    __set_bit(MAX_RM_PRIO, array->bitmap);
+
+    rm_rq->rm_queued = 0;
+    raw_spin_lock_init(&rm_rq->rm_runtime_lock);
+
+}
+
+
+void __init init_sched_rm_class(void){
+
+    unsigned int i;
+
+    for_each_possible_cpu(i) {
+        zalloc_cpumask_var_node(&per_cpu(local_cpu_mask, i),
+                                GFP_KERNEL, cpu_to_node(i));
+    }
+}
+
+
 static enum hrtimer_restart job_arrival_handler(struct hrtimer *timer);
 static void enqueue_task_rm(struct rq *rq, struct task_struct *p, int flags);
 
